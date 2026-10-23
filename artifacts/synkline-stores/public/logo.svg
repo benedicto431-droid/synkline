@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 56" role="img" aria-label="Synkline">
+  <rect width="52" height="52" x="2" y="2" rx="13" fill="#2469c9"/>
+  <path d="M14 17h28v19H14zM10 40h36l-3 4H13z" fill="none" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/>
+  <path d="M19 21h18v11H19z" fill="#d9ebff"/>
+  <text x="67" y="38" fill="#173c69" font-family="DM Sans,Arial,sans-serif" font-size="32" font-weight="700" letter-spacing="-1.8">synkline.</text>
+</svg>

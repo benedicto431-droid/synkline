@@ -10,6 +10,10 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: store
+    description: Storefront, guest orders, and product assistance
+  - name: admin
+    description: Store administration
 paths:
   /healthz:
     get:
@@ -24,6 +28,184 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /products:
+    get:
+      operationId: getProducts
+      tags: [store]
+      summary: List storefront products
+      parameters:
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: category
+          schema: { type: string }
+      responses:
+        "200":
+          description: Product collection
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Product" }
+  /products/{productId}:
+    get:
+      operationId: getProduct
+      tags: [store]
+      summary: Get product details
+      parameters:
+        - in: path
+          name: productId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Product detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+        "404": { description: Product not found }
+  /products/{productId}/similar:
+    get:
+      operationId: getSimilarProducts
+      tags: [store]
+      summary: Recommend similar products
+      parameters:
+        - in: path
+          name: productId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Similar products ranked by price and size
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Product" }
+  /orders:
+    post:
+      operationId: createGuestOrder
+      tags: [store]
+      summary: Submit an order without registering
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GuestOrderInput" }
+      responses:
+        "201":
+          description: Order recorded for follow-up
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GuestOrder" }
+  /assistant/chat:
+    post:
+      operationId: chatAboutProduct
+      tags: [store]
+      summary: Ask Cohere about a laptop
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProductChatInput" }
+      responses:
+        "200":
+          description: Product-spec answer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProductChatResponse" }
+        "503": { description: Cohere API key is not configured }
+  /admin/products:
+    get:
+      operationId: getAdminProducts
+      tags: [admin]
+      summary: List products in the admin area
+      responses:
+        "200":
+          description: Product collection
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Product" }
+    post:
+      operationId: createAdminProduct
+      tags: [admin]
+      summary: Create a product
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProductInput" }
+      responses:
+        "201":
+          description: Product created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+  /admin/products/{productId}:
+    patch:
+      operationId: updateAdminProduct
+      tags: [admin]
+      summary: Update product details
+      parameters:
+        - in: path
+          name: productId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProductInput" }
+      responses:
+        "200":
+          description: Product updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+    delete:
+      operationId: deleteAdminProduct
+      tags: [admin]
+      summary: Remove a product
+      parameters:
+        - in: path
+          name: productId
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Product deleted }
+  /admin/orders:
+    get:
+      operationId: getAdminOrders
+      tags: [admin]
+      summary: List guest orders
+      responses:
+        "200":
+          description: Order collection
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/GuestOrder" }
+  /admin/images:
+    post:
+      operationId: uploadAdminImage
+      tags: [admin]
+      summary: Upload a laptop image for a product listing
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/AdminImageInput"
+      responses:
+        "201":
+          description: Image saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminImageResponse" }
 components:
   schemas:
     HealthStatus:
@@ -33,4 +215,96 @@ components:
           type: string
       required:
         - status
+    Product:
+      type: object
+      required: [id, name, brand, category, price, description, images, specs, stock, featured]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        brand: { type: string }
+        category: { type: string }
+        price: { type: number }
+        description: { type: string }
+        images:
+          type: array
+          items: { type: string }
+        specs:
+          type: object
+          additionalProperties: { type: string }
+        stock: { type: integer }
+        featured: { type: boolean }
+    ProductInput:
+      type: object
+      required: [name, brand, category, price, description, images, specs, stock, featured]
+      properties:
+        name: { type: string, minLength: 1 }
+        brand: { type: string, minLength: 1 }
+        category: { type: string }
+        price: { type: number, minimum: 0 }
+        description: { type: string }
+        images:
+          type: array
+          items: { type: string }
+        specs:
+          type: object
+          additionalProperties: { type: string }
+        stock: { type: integer, minimum: 0 }
+        featured: { type: boolean }
+    GuestOrderItem:
+      type: object
+      required: [productId, quantity]
+      properties:
+        productId: { type: string }
+        quantity: { type: integer, minimum: 1 }
+    GuestOrderInput:
+      type: object
+      required: [name, email, phone, deliveryAddress, items]
+      properties:
+        name: { type: string, minLength: 1 }
+        email: { type: string, format: email }
+        phone: { type: string, minLength: 1 }
+        deliveryAddress: { type: string, minLength: 1 }
+        items:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/GuestOrderItem" }
+    GuestOrder:
+      type: object
+      required: [id, reference, name, email, phone, deliveryAddress, items, total, status, paymentStatus]
+      properties:
+        id: { type: string }
+        reference: { type: string }
+        name: { type: string }
+        email: { type: string }
+        phone: { type: string }
+        deliveryAddress: { type: string }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/GuestOrderItem" }
+        total: { type: number }
+        status: { type: string }
+        paymentStatus: { type: string }
+    ProductChatInput:
+      type: object
+      required: [productId, message]
+      properties:
+        productId: { type: string }
+        message: { type: string, minLength: 1 }
+    ProductChatResponse:
+      type: object
+      required: [reply]
+      properties:
+        reply: { type: string }
+    AdminImageInput:
+      type: object
+      required: [image]
+      properties:
+        image:
+          type: string
+          format: binary
+    AdminImageResponse:
+      type: object
+      required: [url]
+      properties:
+        url: { type: string }
 

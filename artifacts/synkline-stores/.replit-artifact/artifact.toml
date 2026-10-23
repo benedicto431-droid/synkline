@@ -1,0 +1,45 @@
+kind = "web"
+previewPath = "/"
+title = "Synkline Stores"
+description = "A polished laptop storefront with guest ordering, product galleries, comparisons, similar-device recommendations, admin product management, and Cohere-powered spec chat when configured."
+version = "1.0.0"
+id = "artifacts/synkline-stores"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24909
+
+[services.development]
+run = "pnpm --filter @workspace/synkline-stores run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/synkline-stores", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/synkline-stores/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24909"
+BASE_PATH = "/"
+
+[[services]]
+name = "flask-api"
+paths = ["/api"]
+localPort = 5001
+
+[services.development]
+run = "uv run python app.py"
+
+[services.production.build]
+args = ["uv", "sync", "--locked"]
+
+[services.production.run]
+args = ["uv", "run", "gunicorn", "--bind", "0.0.0.0:5001", "app:app"]
+
+[services.production.run.env]
+PORT = "5001"
