@@ -116,6 +116,29 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ProductChatResponse" }
         "503": { description: Cohere API key is not configured }
+  /settings:
+    get:
+      operationId: getStoreSettings
+      tags: [store]
+      summary: Get storefront presentation settings
+      responses:
+        "200":
+          description: Current storefront settings
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StoreSettings" }
+  /track:
+    post:
+      operationId: trackPageVisit
+      tags: [store]
+      summary: Record an anonymous page visit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PageVisitInput" }
+      responses:
+        "200": { description: Visit recorded }
   /admin/products:
     get:
       operationId: getAdminProducts
@@ -206,6 +229,69 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AdminImageResponse" }
+  /admin/login:
+    post:
+      operationId: adminLogin
+      tags: [admin]
+      summary: Sign in to store administration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminLoginInput" }
+      responses:
+        "200":
+          description: Admin session started
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminSession" }
+        "401": { description: Invalid credentials }
+        "503": { description: Admin password is not configured }
+  /admin/session:
+    get:
+      operationId: getAdminSession
+      tags: [admin]
+      summary: Check whether the current browser has an admin session
+      responses:
+        "200":
+          description: Current admin session state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminSession" }
+  /admin/logout:
+    post:
+      operationId: adminLogout
+      tags: [admin]
+      summary: Sign out of store administration
+      responses:
+        "200": { description: Admin session ended }
+  /admin/settings:
+    put:
+      operationId: updateStoreSettings
+      tags: [admin]
+      summary: Update storefront presentation settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StoreSettingsInput" }
+      responses:
+        "200":
+          description: Storefront settings saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StoreSettings" }
+  /admin/analytics:
+    get:
+      operationId: getAdminAnalytics
+      tags: [admin]
+      summary: View anonymous storefront analytics
+      responses:
+        "200":
+          description: Anonymous visits, top pages, and recent page views
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminAnalytics" }
 components:
   schemas:
     HealthStatus:
@@ -307,4 +393,59 @@ components:
       required: [url]
       properties:
         url: { type: string }
+    AdminLoginInput:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string }
+    AdminSession:
+      type: object
+      required: [authenticated, username, configured]
+      properties:
+        authenticated: { type: boolean }
+        username: { type: ["string", "null"] }
+        error: { type: ["string", "null"] }
+        configured: { type: boolean }
+    StoreSettings:
+      type: object
+      required: [accentColor]
+      properties:
+        accentColor: { type: string }
+    StoreSettingsInput:
+      type: object
+      required: [accentColor]
+      properties:
+        accentColor: { type: string, pattern: "^#[0-9A-Fa-f]{6}$" }
+    PageVisitInput:
+      type: object
+      required: [visitorId, path]
+      properties:
+        visitorId: { type: string, minLength: 16, maxLength: 80 }
+        path: { type: string, minLength: 1, maxLength: 100 }
+    PageVisit:
+      type: object
+      required: [visitor, path, visitedAt]
+      properties:
+        visitor: { type: string }
+        path: { type: string }
+        visitedAt: { type: string, format: date-time }
+    PageCount:
+      type: object
+      required: [path, views]
+      properties:
+        path: { type: string }
+        views: { type: integer }
+    AdminAnalytics:
+      type: object
+      required: [totalVisits, uniqueVisitors, recentVisits, topPages]
+      properties:
+        totalVisits: { type: integer }
+        uniqueVisitors: { type: integer }
+        recentVisits:
+          type: array
+          items: { $ref: "#/components/schemas/PageVisit" }
+        topPages:
+          type: array
+          items: { $ref: "#/components/schemas/PageCount" }
 

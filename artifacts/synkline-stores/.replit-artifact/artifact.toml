@@ -33,13 +33,13 @@ paths = ["/api"]
 localPort = 5001
 
 [services.development]
-run = "uv run python app.py"
+run = "uv run --project ../.. python ../../app.py"
 
 [services.production.build]
-args = ["uv", "sync", "--locked"]
+args = ["uv", "sync", "--project", "../../", "--locked"]
 
 [services.production.run]
-args = ["uv", "run", "gunicorn", "--bind", "0.0.0.0:5001", "app:app"]
+args = ["uv", "run", "--project", "../../", "gunicorn", "--chdir", "../../", "--bind", "0.0.0.0:5001", "app:app"]
 
 [services.production.run.env]
 PORT = "5001"

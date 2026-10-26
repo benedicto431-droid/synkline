@@ -141,6 +141,32 @@ export const ChatAboutProductResponse = zod.object({
 
 
 /**
+ * @summary Get storefront presentation settings
+ */
+export const GetStoreSettingsResponse = zod.object({
+  "accentColor": zod.string()
+})
+
+
+/**
+ * @summary Record an anonymous page visit
+ */
+export const trackPageVisitBodyVisitorIdMin = 16;
+export const trackPageVisitBodyVisitorIdMax = 80;
+
+export const trackPageVisitBodyPathMax = 100;
+
+
+
+export const TrackPageVisitBody = zod.object({
+  "visitorId": zod.string().min(trackPageVisitBodyVisitorIdMin).max(trackPageVisitBodyVisitorIdMax),
+  "path": zod.string().min(1).max(trackPageVisitBodyPathMax)
+})
+
+export const TrackPageVisitResponse = zod.unknown()
+
+
+/**
  * @summary List products in the admin area
  */
 export const GetAdminProductsResponseItem = zod.object({
@@ -268,5 +294,83 @@ export const GetAdminOrdersResponseItem = zod.object({
   "paymentStatus": zod.string()
 })
 export const GetAdminOrdersResponse = zod.array(GetAdminOrdersResponseItem)
+
+
+/**
+ * @summary Upload a laptop image for a product listing
+ */
+export const UploadAdminImageBody = zod.object({
+  "image": zod.instanceof(Blob)
+})
+
+export const UploadAdminImageResponse = zod.object({
+  "url": zod.string()
+})
+
+
+/**
+ * @summary Sign in to store administration
+ */
+export const AdminLoginBody = zod.object({
+  "username": zod.string(),
+  "password": zod.string()
+})
+
+export const AdminLoginResponse = zod.object({
+  "authenticated": zod.boolean(),
+  "username": zod.string().nullable(),
+  "error": zod.string().nullish(),
+  "configured": zod.boolean()
+})
+
+
+/**
+ * @summary Check whether the current browser has an admin session
+ */
+export const GetAdminSessionResponse = zod.object({
+  "authenticated": zod.boolean(),
+  "username": zod.string().nullable(),
+  "error": zod.string().nullish(),
+  "configured": zod.boolean()
+})
+
+
+/**
+ * @summary Sign out of store administration
+ */
+export const AdminLogoutResponse = zod.unknown()
+
+
+/**
+ * @summary Update storefront presentation settings
+ */
+export const updateStoreSettingsBodyAccentColorRegExp = new RegExp('^#[0-9A-Fa-f]{6}$');
+
+
+export const UpdateStoreSettingsBody = zod.object({
+  "accentColor": zod.string().regex(updateStoreSettingsBodyAccentColorRegExp)
+})
+
+export const UpdateStoreSettingsResponse = zod.object({
+  "accentColor": zod.string()
+})
+
+
+/**
+ * @summary View anonymous storefront analytics
+ */
+export const GetAdminAnalyticsResponse = zod.object({
+  "totalVisits": zod.number().int(),
+  "uniqueVisitors": zod.number().int(),
+  "recentVisits": zod.array(zod.object({
+  "visitor": zod.string(),
+  "path": zod.string(),
+  "visitedAt": zod.coerce.date()
+})),
+  "topPages": zod.array(zod.object({
+  "path": zod.string(),
+  "views": zod.number().int()
+}))
+})
 
 

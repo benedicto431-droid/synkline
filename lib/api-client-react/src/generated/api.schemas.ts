@@ -83,6 +83,68 @@ export interface ProductChatResponse {
   reply: string;
 }
 
+export interface AdminImageInput {
+  image: Blob | File;
+}
+
+export interface AdminImageResponse {
+  url: string;
+}
+
+export interface AdminLoginInput {
+  username: string;
+  password: string;
+}
+
+export interface AdminSession {
+  authenticated: boolean;
+  /** @nullable */
+  username: string | null;
+  /** @nullable */
+  error?: string | null;
+  configured: boolean;
+}
+
+export interface StoreSettings {
+  accentColor: string;
+}
+
+export interface StoreSettingsInput {
+  /** @pattern ^#[0-9A-Fa-f]{6}$ */
+  accentColor: string;
+}
+
+export interface PageVisitInput {
+  /**
+     * @minLength 16
+     * @maxLength 80
+     */
+  visitorId: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  path: string;
+}
+
+export interface PageVisit {
+  visitor: string;
+  path: string;
+  visitedAt: string;
+}
+
+export interface PageCount {
+  path: string;
+  views: number;
+}
+
+export interface AdminAnalytics {
+  totalVisits: number;
+  uniqueVisitors: number;
+  recentVisits: PageVisit[];
+  topPages: PageCount[];
+}
+
 export type GetProductsParams = {
 search?: string;
 category?: string;

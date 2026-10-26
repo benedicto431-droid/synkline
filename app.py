@@ -1,20 +1,22 @@
 from __future__ import annotations
 
-import base64
+import hashlib
+import hmac
 import json
 import os
 import re
 import sqlite3
+import time
 import uuid
-from datetime import datetime, timezone
-from functools import lru_cache, wraps
+from collections import defaultdict, deque
+from datetime import datetime, timedelta, timezone
+from functools import wraps
 from pathlib import Path
 from typing import Any, Callable
 
-import jwt
 import requests
-from flask import Flask, jsonify, request, send_from_directory
-from jwt import PyJWKClient
+from flask import Flask, jsonify, request, send_from_directory, session
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 
 
@@ -26,7 +28,16 @@ ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SESSION_SECRET")
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
+)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+LOGIN_ATTEMPTS: dict[str, deque[float]] = defaultdict(deque)
 
 
 SEED_PRODUCTS = [
@@ -152,6 +163,27 @@ def initialize_database() -> None:
             )
             """
         )
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS store_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+            """
+        )
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS page_visits (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                visitor_hash TEXT NOT NULL,
+                path TEXT NOT NULL,
+                visited_at TEXT NOT NULL
+            )
+            """
+        )
+        db.execute(
+            "INSERT OR IGNORE INTO store_settings (key, value) VALUES ('accentColor', '#2469c9')"
+        )
         existing = db.execute("SELECT COUNT(*) AS count FROM products").fetchone()["count"]
         if existing == 0:
             for product in SEED_PRODUCTS:
@@ -201,83 +233,32 @@ def _get_product(product_id: str) -> dict[str, Any] | None:
         return _product_from_row(row) if row else None
 
 
-def _clerk_jwks_url() -> str:
-    publishable_key = os.environ.get("CLERK_PUBLISHABLE_KEY", "")
-    try:
-        encoded = publishable_key.split("_", 2)[2]
-        padded = encoded + ("=" * (-len(encoded) % 4))
-        host = base64.urlsafe_b64decode(padded.encode()).decode().rstrip("$")
-        if not host.startswith("clerk."):
-            raise ValueError("Unexpected Clerk publishable key host")
-        return f"https://{host}/.well-known/jwks.json"
-    except (IndexError, ValueError, UnicodeDecodeError):
-        raise RuntimeError("Clerk authentication is not configured correctly")
-
-
-@lru_cache(maxsize=1)
-def _jwks_client(url: str) -> PyJWKClient:
-    return PyJWKClient(url, cache_keys=True, cache_jwk_set=True)
-
-
-@lru_cache(maxsize=128)
-def _clerk_user_email(user_id: str) -> str | None:
-    secret_key = os.environ.get("CLERK_SECRET_KEY")
-    if not secret_key:
-        return None
-    response = requests.get(
-        f"https://api.clerk.com/v1/users/{user_id}",
-        headers={"Authorization": f"Bearer {secret_key}"},
-        timeout=8,
-    )
-    response.raise_for_status()
-    user = response.json()
-    primary_id = user.get("primary_email_address_id")
-    for address in user.get("email_addresses", []):
-        if address.get("id") == primary_id:
-            return str(address.get("email_address", "")).lower()
-    return None
-
-
-def _admin_identity() -> tuple[bool, str]:
-    configured_email = os.environ.get("ADMIN_EMAIL", "").strip().lower()
-    if not configured_email:
-        return False, "Admin access is not configured. Set ADMIN_EMAIL to the store administrator's account email."
-
-    token = request.cookies.get("__session")
-    if not token:
-        return False, "Sign in with the store administrator account to continue."
-
-    try:
-        signing_key = _jwks_client(_clerk_jwks_url()).get_signing_key_from_jwt(token)
-        claims = jwt.decode(
-            token,
-            signing_key.key,
-            algorithms=["RS256"],
-            options={"verify_aud": False},
-        )
-        user_id = str(claims.get("sub", ""))
-        if not user_id:
-            return False, "Your sign-in session could not be verified."
-        email = _clerk_user_email(user_id)
-        if not email or email != configured_email:
-            return False, "This account does not have store administrator access."
-        return True, ""
-    except (jwt.PyJWTError, requests.RequestException, RuntimeError, ValueError):
-        return False, "Your sign-in session could not be verified. Please sign in again."
-
-
 def require_admin(handler: Callable[..., Any]) -> Callable[..., Any]:
     @wraps(handler)
     def wrapped(*args: Any, **kwargs: Any) -> Any:
-        allowed, message = _admin_identity()
-        if allowed:
+        configured_password = os.environ.get("ADMIN_PASSWORD", "")
+        if len(configured_password) < 12 or not app.secret_key:
+            return jsonify({"error": "Admin access is not configured. Add a strong ADMIN_PASSWORD through project secrets."}), 503
+        if session.get("synkline_admin") is True:
             return handler(*args, **kwargs)
-        status = 503 if not os.environ.get("ADMIN_EMAIL", "").strip() else 401
-        if "does not have" in message:
-            status = 403
-        return jsonify({"error": message}), status
+        return jsonify({"error": "Sign in with the store administrator account to continue."}), 401
 
     return wrapped
+
+
+def _admin_configured() -> bool:
+    return len(os.environ.get("ADMIN_PASSWORD", "")) >= 12 and bool(app.secret_key)
+
+
+def _login_bucket_key() -> str:
+    source = request.remote_addr or "unknown"
+    secret = app.secret_key or "unconfigured"
+    return hashlib.sha256(f"{secret}:{source}".encode()).hexdigest()
+
+
+def _trim_login_attempts(bucket: deque[float], now: float) -> None:
+    while bucket and now - bucket[0] > 600:
+        bucket.popleft()
 
 
 def _validate_product_payload(payload: Any) -> tuple[dict[str, Any] | None, str | None]:
@@ -325,6 +306,88 @@ def _validate_product_payload(payload: Any) -> tuple[dict[str, Any] | None, str 
 @app.get("/api/healthz")
 def health_check() -> Any:
     return jsonify({"status": "ok"})
+
+
+@app.get("/api/settings")
+def get_store_settings() -> Any:
+    with get_db() as db:
+        row = db.execute("SELECT value FROM store_settings WHERE key = 'accentColor'").fetchone()
+    return jsonify({"accentColor": row["value"] if row else "#2469c9"})
+
+
+@app.post("/api/track")
+def track_page_visit() -> Any:
+    payload = request.get_json(silent=True) or {}
+    visitor_id = str(payload.get("visitorId", "")).strip()
+    path = str(payload.get("path", "")).split("?", 1)[0].strip()
+    if len(visitor_id) < 16 or len(visitor_id) > 80 or not path.startswith("/") or path.startswith("//"):
+        return jsonify({"error": "Invalid anonymous visit data."}), 400
+    if len(path) > 100:
+        path = path[:100]
+    salt = app.secret_key or "synkline-local-analytics"
+    visitor_hash = hashlib.sha256(f"{salt}:{visitor_id}".encode()).hexdigest()
+    visited_at = datetime.now(timezone.utc).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
+    with get_db() as db:
+        db.execute("DELETE FROM page_visits WHERE visited_at < ?", (cutoff,))
+        db.execute(
+            "INSERT INTO page_visits (visitor_hash, path, visited_at) VALUES (?, ?, ?)",
+            (visitor_hash, path, visited_at),
+        )
+    return jsonify({"ok": True})
+
+
+@app.post("/api/admin/login")
+def admin_login() -> Any:
+    if not _admin_configured():
+        return jsonify(
+            {
+                "authenticated": False,
+                "username": None,
+                "configured": False,
+                "error": "Admin access is not configured. Add a strong ADMIN_PASSWORD through project secrets.",
+            }
+        ), 503
+
+    now = time.monotonic()
+    attempts = LOGIN_ATTEMPTS[_login_bucket_key()]
+    _trim_login_attempts(attempts, now)
+    if len(attempts) >= 5:
+        return jsonify({"error": "Too many sign-in attempts. Wait ten minutes and try again."}), 429
+
+    payload = request.get_json(silent=True) or {}
+    username = str(payload.get("username", ""))
+    password = str(payload.get("password", ""))
+    configured_password = os.environ["ADMIN_PASSWORD"]
+    if username != "admin" or not hmac.compare_digest(password, configured_password):
+        attempts.append(now)
+        return jsonify({"error": "The username or password is incorrect."}), 401
+
+    attempts.clear()
+    session.clear()
+    session.permanent = True
+    session["synkline_admin"] = True
+    return jsonify({"authenticated": True, "username": "admin", "configured": True, "error": None})
+
+
+@app.get("/api/admin/session")
+def get_admin_session() -> Any:
+    configured = _admin_configured()
+    authenticated = configured and session.get("synkline_admin") is True
+    return jsonify(
+        {
+            "authenticated": authenticated,
+            "username": "admin" if authenticated else None,
+            "configured": configured,
+            "error": None if configured else "Add a strong ADMIN_PASSWORD through project secrets to enable admin access.",
+        }
+    )
+
+
+@app.post("/api/admin/logout")
+def admin_logout() -> Any:
+    session.clear()
+    return jsonify({"authenticated": False, "username": None, "configured": _admin_configured(), "error": None})
 
 
 @app.get("/api/products")
@@ -399,6 +462,7 @@ def create_guest_order() -> Any:
         return jsonify({"error": "Your cart is empty."}), 400
 
     order_items: list[dict[str, Any]] = []
+    stock_updates: list[tuple[int, str]] = []
     total = 0.0
     order_id = str(uuid.uuid4())
     reference = f"SK-{uuid.uuid4().hex[:8].upper()}"
@@ -418,7 +482,9 @@ def create_guest_order() -> Any:
                 if quantity > product["stock"]:
                     return jsonify({"error": f"Only {product['stock']} units of {product['name']} are available."}), 409
                 order_items.append({"productId": product_id, "quantity": quantity})
+                stock_updates.append((quantity, product_id))
                 total += product["price"] * quantity
+            for quantity, product_id in stock_updates:
                 db.execute("UPDATE products SET stock = stock - ? WHERE id = ?", (quantity, product_id))
             db.execute(
                 """
@@ -596,6 +662,61 @@ def admin_list_orders() -> Any:
             }
             for row in rows
         ]
+    )
+
+
+@app.put("/api/admin/settings")
+@require_admin
+def admin_update_store_settings() -> Any:
+    payload = request.get_json(silent=True) or {}
+    accent_color = str(payload.get("accentColor", "")).strip()
+    if not re.fullmatch(r"#[0-9A-Fa-f]{6}", accent_color):
+        return jsonify({"error": "Choose a valid six-digit hex color."}), 400
+    with get_db() as db:
+        db.execute(
+            """
+            INSERT INTO store_settings (key, value) VALUES ('accentColor', ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (accent_color.lower(),),
+        )
+    return jsonify({"accentColor": accent_color.lower()})
+
+
+@app.get("/api/admin/analytics")
+@require_admin
+def admin_analytics() -> Any:
+    with get_db() as db:
+        total_visits = db.execute("SELECT COUNT(*) AS total FROM page_visits").fetchone()["total"]
+        unique_visitors = db.execute(
+            "SELECT COUNT(DISTINCT visitor_hash) AS total FROM page_visits"
+        ).fetchone()["total"]
+        top_pages = db.execute(
+            """
+            SELECT path, COUNT(*) AS views FROM page_visits
+            GROUP BY path ORDER BY views DESC, path ASC LIMIT 12
+            """
+        ).fetchall()
+        recent_visits = db.execute(
+            """
+            SELECT visitor_hash, path, visited_at FROM page_visits
+            ORDER BY id DESC LIMIT 50
+            """
+        ).fetchall()
+    return jsonify(
+        {
+            "totalVisits": total_visits,
+            "uniqueVisitors": unique_visitors,
+            "topPages": [{"path": row["path"], "views": row["views"]} for row in top_pages],
+            "recentVisits": [
+                {
+                    "visitor": f"Visitor {row['visitor_hash'][:8]}",
+                    "path": row["path"],
+                    "visitedAt": row["visited_at"],
+                }
+                for row in recent_visits
+            ],
+        }
     )
 
 
