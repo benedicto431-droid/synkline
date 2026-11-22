@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#173c69" />
+    <meta
+      name="description"
+      content="Explore carefully selected laptops, compare real specifications, and order from Synkline Stores as a guest."
+    />
+    <title>Synkline Stores — Find the right laptop</title>
+    <link rel="icon" href="{{ url_for('storefront_favicon') }}" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=Space+Mono:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/storefront.css') }}" />
+    <script defer src="{{ url_for('static', filename='js/storefront.js') }}"></script>
+  </head>
+  <body>
+    <div id="app" aria-live="polite">
+      <div class="page-loading"><span class="loading-mark">S</span><span>Opening the showroom…</span></div>
+    </div>
+    <noscript>
+      <p class="noscript-message">Synkline Stores needs JavaScript enabled for product search, comparisons, and guest checkout.</p>
+    </noscript>
+  </body>
+</html>

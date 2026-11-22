@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import requests
-from flask import Flask, jsonify, request, send_from_directory, session
+from flask import Flask, jsonify, render_template, request, send_from_directory, session
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 
@@ -24,10 +24,13 @@ ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / ".data"
 DATABASE_PATH = DATA_DIR / "synkline.sqlite3"
 UPLOAD_DIR = ROOT / "artifacts" / "synkline-stores" / "public" / "uploads"
+PRODUCT_IMAGE_DIR = ROOT / "artifacts" / "synkline-stores" / "public" / "images"
+STATIC_DIR = ROOT / "static"
+TEMPLATE_DIR = ROOT / "templates"
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder=str(STATIC_DIR), template_folder=str(TEMPLATE_DIR))
 app.secret_key = os.environ.get("SESSION_SECRET")
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
 app.config.update(
@@ -259,6 +262,24 @@ def _login_bucket_key() -> str:
 def _trim_login_attempts(bucket: deque[float], now: float) -> None:
     while bucket and now - bucket[0] > 600:
         bucket.popleft()
+
+
+@app.get("/")
+@app.get("/product/<product_id>")
+@app.get("/checkout")
+@app.get("/admin")
+def storefront_page(product_id: str | None = None) -> Any:
+    return render_template("storefront.html", product_id=product_id)
+
+
+@app.get("/images/<path:filename>")
+def product_image(filename: str) -> Any:
+    return send_from_directory(PRODUCT_IMAGE_DIR, filename)
+
+
+@app.get("/favicon.svg")
+def storefront_favicon() -> Any:
+    return send_from_directory(ROOT / "artifacts" / "synkline-stores" / "public", "favicon.svg")
 
 
 def _validate_product_payload(payload: Any) -> tuple[dict[str, Any] | None, str | None]:

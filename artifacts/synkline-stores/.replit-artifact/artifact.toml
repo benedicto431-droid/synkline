@@ -1,36 +1,15 @@
 kind = "web"
 previewPath = "/"
 title = "Synkline Stores"
-description = "A polished laptop storefront with guest ordering, product galleries, comparisons, similar-device recommendations, admin product management, and Cohere-powered spec chat when configured."
+description = "A Flask-rendered laptop storefront with guest orders, image galleries, product comparisons, anonymous visitor analytics, admin product management, and Cohere chat when configured."
 version = "1.0.0"
 id = "artifacts/synkline-stores"
 router = "path"
 
 [[services]]
 name = "web"
-paths = [ "/" ]
+paths = ["/"]
 localPort = 24909
-
-[services.development]
-run = "pnpm --filter @workspace/synkline-stores run dev"
-
-[services.production]
-build = [ "pnpm", "--filter", "@workspace/synkline-stores", "run", "build" ]
-serve = "static"
-publicDir = "artifacts/synkline-stores/dist/public"
-
-[[services.production.rewrites]]
-from = "/*"
-to = "/index.html"
-
-[services.env]
-PORT = "24909"
-BASE_PATH = "/"
-
-[[services]]
-name = "flask-api"
-paths = ["/api"]
-localPort = 5001
 
 [services.development]
 run = "uv run --project ../.. python ../../app.py"
@@ -39,7 +18,7 @@ run = "uv run --project ../.. python ../../app.py"
 args = ["uv", "sync", "--project", "../../", "--locked"]
 
 [services.production.run]
-args = ["uv", "run", "--project", "../../", "gunicorn", "--chdir", "../../", "--bind", "0.0.0.0:5001", "app:app"]
+args = ["uv", "run", "--project", "../../", "gunicorn", "--chdir", "../../", "--bind", "0.0.0.0:24909", "app:app"]
 
 [services.production.run.env]
-PORT = "5001"
+PORT = "24909"
